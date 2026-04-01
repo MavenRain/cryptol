@@ -14,7 +14,7 @@ import Data.Foldable (for_)
 import Control.Monad(when,guard,unless,msum,mplus)
 
 import Cryptol.Utils.PP
-import Cryptol.Utils.Ident(OrigName(..),identIsNormal)
+import Cryptol.Utils.Ident(OrigName(..),identIsNormal,identText,isInfixIdent)
 import qualified Cryptol.Parser.AST as P
 import qualified Cryptol.ModuleSystem as M
 import qualified Cryptol.ModuleSystem.Name as M
@@ -35,10 +35,12 @@ helpForNamed qname =
          rnEnv  = M.mctxNames  fe
          disp   = M.mctxNameDisp fe
 
-         vNames = M.lookupListNS M.NSValue       qname rnEnv
-         cNames = M.lookupListNS M.NSConstructor qname rnEnv
-         tNames = M.lookupListNS M.NSType        qname rnEnv
-         mNames = M.lookupListNS M.NSModule      qname rnEnv
+         names  = qname : prefixOpAliases qname
+
+         vNames = concatMap (\n -> M.lookupListNS M.NSValue       n rnEnv) names
+         cNames = concatMap (\n -> M.lookupListNS M.NSConstructor n rnEnv) names
+         tNames = concatMap (\n -> M.lookupListNS M.NSType        n rnEnv) names
+         mNames = concatMap (\n -> M.lookupListNS M.NSModule      n rnEnv) names
 
      let helps = map (showTypeHelp params env disp) tNames ++
                  map (showValHelp params env disp qname) vNames ++
@@ -51,9 +53,18 @@ helpForNamed qname =
      let failure = null (vNames ++ cNames ++ tNames ++ mNames)
      when failure $
        rPrint $ "Undefined name:" <+> pp qname
-    
+
      pure (not failure)
 
+
+-- | Prefix operators @~@ and @-@ are syntactic sugar for @complement@
+-- and @negate@ respectively.  Map them to the underlying function names
+-- so that @:? ~@ and @:? -@ show useful documentation.
+prefixOpAliases :: P.PName -> [P.PName]
+prefixOpAliases (P.UnQual' i _)
+  | isInfixIdent i, identText i == "~" = [P.mkUnqual (P.mkIdent "complement")]
+  | isInfixIdent i, identText i == "-" = [P.mkUnqual (P.mkIdent "negate")]
+prefixOpAliases _ = []
 
 noInfo :: NameDisp -> M.Name -> REPL ()
 noInfo nameEnv name =
